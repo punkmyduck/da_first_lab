@@ -51,58 +51,72 @@
 
 
 ## Примеры HTTP запросов/ответов
-### Попытка зайти без регистрации
-
-![](pic6.png)
-
-### Регистрация
-
-![](pic7.png)
-
 ### Вход
 
-![](pic8.png)
+![signin (1)](https://user-images.githubusercontent.com/122292517/212743733-d870c193-a52f-4535-8621-9657eecb8021.png)
 
 ## Значимые фрагменты кода
-### Ключевая часть signup.php
-Генерация хеша для пароля и значения токена для БД. 
- 
-*$result* — результат обращения к БД по введённому пользователем логину.  
-  
-    if ($result === NULL) {
-            $hash = password_hash($pass, PASSWORD_DEFAULT);
-            $token = random_bytes(16);
-            $token = password_hash("$token", PASSWORD_DEFAULT);
-            mysqli_query($link, "INSERT INTO users (login, hash, token) VALUES ('$name', '$hash', '$token')");
-            $flag='-1'; //успех 
-        } else {
-            $flag='3'; // логин занят
-        }
+### Ключевая часть signup_index.php
+Хеширование пароля, проверка наличие логина в базе данных; если логин не занят, то успешно зарегестрирован
 
-### Ключевая часть login.php
-Проверка на корректность введённых логина и пароля, генерация токена для хранения в куки, установка значений куки.
+    $password_hash = md5($password);
+    $sql = "SELECT *  FROM `lab1` WHERE `username` LIKE '$username';";
+    $count=mysqli_query($connection, $sql);
+    if (mysqli_num_rows($count) > 0){
+        $err='username is already taken!';
+        $_SESSION["msg"]=$err;
+        mysqli_close($connection);
+        header('Location: signup.php', true, 303);
+    }
 
-*$res* — результат обращения к БД по введённому пользователем логину.
+    $sql = "INSERT INTO `lab1` (`id`, `username`, `password_hash`, `auth_token`) VALUES (NULL, '$username', '$password_hash', '');";
+    $result = mysqli_query($connection, $sql);
+    if ($result){
+        $_SESSION["msg"]='You have successfully registered! Now you can sign in.';
+        mysqli_close($connection);
+        header('Location: signin.php', true, 303);
+    }
 
-    if ($res !== NULL and password_verify($pass, $res['hash'])) {
-            $token = $res['token'];
-            $token = password_hash("$token", PASSWORD_DEFAULT);
-            setcookie("login", "$name", time()+3600*24);
-            setcookie("token", "$token", time()+3600*24);
-            header("Location:index.php");
-        } else {
-            $flag = '1'; //некорректный логин или пароль
-        }
+### Ключевая часть signin_index.php
+Проверка подлинности логина и пароля; получение прав доступа и генерация токена в случае успеха
+
+    $password_hash=md5($password);
+
+    $sql = "SELECT *  FROM `lab1` WHERE `username` LIKE '$username' AND `password_hash` LIKE '$password_hash';";
+    $count=mysqli_query($connection, $sql);
+    if (mysqli_num_rows($count)>0){
+        $_SESSION["username"]=$username;
+        $_SESSION["password_hash"]=$password_hash;
+
+        $auth_token=rand();
+        $auth_token=md5($auth_token);
+        setcookie("auth_token", $auth_token);
+        $sql = "UPDATE `lab1` SET `auth_token` = '$auth_token' WHERE `lab1`.`username` = '$username';";
+        mysqli_query($connection, $sql);
+
+        header('Location: hello.php', true, 303);
+    } else
+    {
+        $err='The username or password you entered is incorrect.';
+        $_SESSION["msg"]=$err;
+        header('Location: signin.php', true, 303);
+    }
+
+    ?>
         
 ### Проверка токена авторизации в index.php
 
-        $result = NULL;
-
-    if (isset($_COOKIE['token']) and isset($_COOKIE['login'])) {
-        $token = $_COOKIE['token'] ?? '0';
-        $login = $_COOKIE['login'] ?? '0';
-        $link = mysqli_connect('localhost', 'root', '', 'Lab1');
-        $result = mysqli_fetch_assoc(mysqli_query($link, "SELECT * FROM users WHERE login='$login'"));
+    if (isset($_COOKIE["auth_token"])){
+        $auth_token=$_COOKIE["auth_token"];
+        $sql = "SELECT *  FROM `lab1` WHERE `auth_token` LIKE '$auth_token';";
+        $result=mysqli_query($connection, $sql);
+        if (mysqli_num_rows($result)!=0){
+            if ($row=mysqli_fetch_assoc($result)){
+                $_SESSION["username"]=$row["username"];
+                $_SESSION["password_hash"]=$row["password_hash"];
+                header('Location: hello.php', true, 303);
+            }
+        }
+        else header('Location: signup.php', true, 303);
     }
-    if ($result == NULL or !password_verify($result['token'] ,$token))
-        header('Location:welcome.php');
+    else header('Location: signup.php', true, 303);
